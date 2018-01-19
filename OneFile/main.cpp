@@ -28,10 +28,6 @@ bool BeginsWith(string a, string b) {
 	return true;
 }
 
-bool IsStandardInclude(string line) {
-	return BeginsWith(line, "#include<");
-}
-
 string StringBetween(string s, char a, char b) {
 	string result;
 	bool between = false;
@@ -45,13 +41,26 @@ string StringBetween(string s, char a, char b) {
 	return result;
 }
 
+bool IsStandardInclude(string line) {
+	return BeginsWith(line, "#include<");
+}
+
+bool IsCustomInclude(string line) {
+	return BeginsWith(line, "#include\"");
+}
+
 string GetStandardInclude(string line) {
 	return RemoveWhitespace(StringBetween(line, '<', '>'));
+}
+
+string GetCustomInclude(string line) {
+	return RemoveWhitespace(StringBetween(line, '"', '"'));
 }
 
 class SourceFile {
 
 	set<string> standardIncludes;
+	set<string> headers;
 
 public:
 	SourceFile() { }
@@ -64,6 +73,9 @@ public:
 			if (IsStandardInclude(line)) {
 				standardIncludes.insert(GetStandardInclude(line));
 			}
+			else if (IsCustomInclude(line)) {
+				headers.insert(GetCustomInclude(line));
+			}
 		}
 		file.close();
 	}
@@ -71,22 +83,91 @@ public:
 	set<string> const& StandardIncludes() {
 		return standardIncludes;
 	}
+
+	set<string> const& Headers() {
+		return headers;
+	}
+};
+
+template<typename TKey>
+class DependencyGraph {
+
+	class Node;
+
+	map<TKey, Node> graph;
+
+public:
+
+	void AddEdge(TKey from, TKey to) {
+		cout << "Adding edge from " << from << " to " << to << endl;
+		graph[from].requires.insert(to);
+		graph[to].isRequiredBy.insert(from);
+	}
+
+	void RemoveNode(TKey key) {
+		for (auto&& from : graph[key].isRequiredBy) {
+			graph[from].requires.erase(key);
+		}
+		graph.erase(key);
+	}
+
+	vector<TKey> Solve() {
+		vector<TKey> result;
+		while (!graph.empty()) {
+			for (auto&& i : graph) {
+				if (i.second.IsRoot()) {
+					result.push_back(i.first);
+					RemoveNode(i.first);
+					break;
+				}
+			}
+		}
+		return result;
+	}
+
+	class Node {
+		friend class DependencyGraph;
+
+		set<TKey> requires;
+		set<TKey> isRequiredBy;
+
+		bool IsRoot() {
+			return requires.empty();
+		}
+	};
 };
 
 class Project {
 
+	class GraphNode;
+
 	map<string, SourceFile> files;
 	set<string> standardIncludes;
+	DependencyGraph<string> dependencyGraph;
 
 public:
 	Project(string directory) {
 		for (auto&& i : recursive_directory_iterator(directory)) {
+
 			string ext = i.path().extension().string();
 			if (ext == ".cpp" || ext == ".h" || ext == ".hpp") {
-				string path = i.path().string();
-				files[path] = SourceFile(path);
-				standardIncludes.insert(files[path].StandardIncludes().begin(), files[path].StandardIncludes().end());
+				string curPath = i.path().string();
+				files[curPath] = SourceFile(curPath);
+
+				standardIncludes.insert(files[curPath].StandardIncludes().begin(), files[curPath].StandardIncludes().end());
+
+
+				for (auto&& header : files[curPath].Headers()) {
+					path headerPath = i.path();
+					headerPath.replace_filename(header);
+					dependencyGraph.AddEdge(curPath, headerPath.string());
+				}
 			}
+		}
+
+		vector<string> v = dependencyGraph.Solve();
+		for (auto&& i : v) {
+			cout << i << endl;
 		}
 	}
 
