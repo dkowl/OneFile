@@ -61,6 +61,7 @@ class SourceFile {
 
 	set<string> standardIncludes;
 	set<string> headers;
+	vector<string> content;
 
 public:
 	SourceFile() { }
@@ -76,6 +77,9 @@ public:
 			else if (IsCustomInclude(line)) {
 				headers.insert(GetCustomInclude(line));
 			}
+			else {
+				content.push_back(line);
+			}
 		}
 		file.close();
 	}
@@ -86,6 +90,12 @@ public:
 
 	set<string> const& Headers() {
 		return headers;
+	}
+
+	void WriteContent(ostream &os) {
+		for (auto&& line : content) {
+			os << line << endl;
+		}
 	}
 };
 
@@ -99,7 +109,6 @@ class DependencyGraph {
 public:
 
 	void AddEdge(TKey from, TKey to) {
-		cout << "Adding edge from " << from << " to " << to << endl;
 		graph[from].requires.insert(to);
 		graph[to].isRequiredBy.insert(from);
 	}
@@ -164,11 +173,6 @@ public:
 				}
 			}
 		}
-
-		vector<string> v = dependencyGraph.Solve();
-		for (auto&& i : v) {
-			cout << i << endl;
-		}
 	}
 
 	void WriteStandardIncludes(ostream &os) {
@@ -176,14 +180,29 @@ public:
 			os << "#include <" << i << ">" << endl;
 		}
 	}
+
+	void WriteFile(ostream &os, string filepath) {
+		files[filepath].WriteContent(os);
+	}
+
+	void Write(ostream &os) {
+		WriteStandardIncludes(os);
+
+		vector<string> sourcePaths = dependencyGraph.Solve();
+		for (auto&& sourcePath : sourcePaths) {
+			WriteFile(os, sourcePath);
+		}
+	}
 };
 
 int main() {
 
-	string directory = "C:/Users/Dominik/Programowanie/SDiZO/Project1";
+	string directory = current_path().string();
 	Project project(directory);
-	project.WriteStandardIncludes(cout);
 
-	system("PAUSE");
+	ofstream file("OneFile.cpp");
+	project.Write(file);
+	file.close();
+
 	return 0;
 }
